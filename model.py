@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
-from torchvision.models import vit_l_16
-from torchvision.models import ViT_L_16_Weights
+import timm
 from tqdm import tqdm
 import argparse
+from torch.amp import autocast, GradScaler
 
 from dataset import ImageDataset
 
@@ -13,24 +13,27 @@ from dataset import ImageDataset
 torch.set_float32_matmul_precision('high')
 torch.backends.cudnn.benchmark = True
 
+scaler = GradScaler()
 
-def build_model(img_size) -> nn.Module:
-    model = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_V1)
-    model.image_size = img_size
 
-    for name, param in model.named_parameters():
+def build_model(cloud) -> nn.Module:
+    model = timm.create_model("convnext_large_in22k", pretrained=True)
+    model.head.fc = nn.Linear(in_features=model.head.fc.in_features, out_features=8)
+
+    for param in model.parameters():
         param.requires_grad = False
-        if "encoder_layer_22" in name:
-            param.requires_grad = True
-        if "encoder_layer_23" in name:
-            param.requires_grad = True
-        if "heads in name":
-            param.requires_grad = True
-    model.heads.head = nn.Linear(1024, 8, bias=True)
-    model = model.to(device='cuda')
-    model = model.to(memory_format=torch.channels_last)
 
-    model = torch.compile(model, mode='max-autotune')
+    for param in model.stages[-1].parameters():
+        param.requires_grad = True
+
+    for param in model.head.parameters():
+        param.requires_grad = True
+
+    # noinspection PyArgumentList
+    model = model.to(device='cuda', memory_format=torch.channels_last)
+
+    if cloud:
+        model = torch.compile(model, mode='max-autotune')
 
     return model
 
@@ -50,13 +53,18 @@ def train_one_epoch(
     loop = tqdm(loader, desc=f"Epoch {epoch:>3}/{EPOCHS}", leave=True)
 
     for images, labels in loop:
-        images = images.to(DEVICE)
+        images = images.to(DEVICE, memory_format=torch.channels_last)
         labels = labels.to(DEVICE)
 
         optimizer.zero_grad()
-        loss = criterion(model(images), labels)
-        loss.backward()
-        optimizer.step()
+
+        with autocast(device_type='cuda', dtype=torch.float16):
+            predictions = model(images)
+            loss = criterion(predictions, labels)
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         running_loss += loss.item()
         loop.set_postfix(loss=f"{loss.item():.4f}")
@@ -86,33 +94,38 @@ def train(
         prev_loss = epoch_loss
         if epoch_loss < best_loss:
             print("Saving Model ...", epoch_loss)
-            torch.save(model.state_dict(),f'./models/ViT-L_epoch-{epoch}.pth')
+            torch.save(model.state_dict(),f'./models/convnext_epoch-{epoch}.pth')
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def main(data_dir: str, img_size: int, delta_es: float) -> None:
+def main(data_dir: str, img_size: int, delta_es: float, cloud) -> None:
     dataset    = ImageDataset(data_dir, img_size)
-    loader = DataLoader(
-        dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=8,  # Use 80% of your 20 vCPUs
-        pin_memory=True,  # Critical for fast CPU→GPU transfer
-        persistent_workers=True,  # Keep workers alive between epochs
-        prefetch_factor=2,  # Prefetch 4 batches per worker = 64 batches ahead
-        multiprocessing_context='fork',  # Faster than spawn on Linux
-        drop_last=True,
-    )
+    if cloud is True:
+        loader = DataLoader(
+            dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=True,
+            num_workers=8,  # Use 80% of your 20 vCPUs
+            pin_memory=True,  # Critical for fast CPU→GPU transfer
+            persistent_workers=True,  # Keep workers alive between epochs
+            prefetch_factor=2,  # Prefetch 4 batches per worker = 64 batches ahead
+            multiprocessing_context='fork',  # Faster than spawn on Linux
+            drop_last=True,
+        )
+    else:
+        loader = DataLoader(
+            dataset,
+            shuffle=True,
+            batch_size=BATCH_SIZE
+        )
 
-    model      = build_model(img_size=img_size)
+    model      = build_model(cloud)
     criterion  = nn.CrossEntropyLoss(label_smoothing=0.05)
-    optimizer  = optim.AdamW([
-        {"params": model.encoder.layers.encoder_layer_22.parameters(), "lr": LR},
-        {"params": model.encoder.layers.encoder_layer_23.parameters(), "lr": LR},
-        {"params": model.heads.parameters(), "lr": 1e-2}
-    ],
-        weight_decay=0.05
+    optimizer  = optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=1e-4,
+        weight_decay=1e-4
     )
     scheduler  = optim.lr_scheduler.CosineAnnealingLR(
                     optimizer, T_max=EPOCHS, eta_min=1e-5
@@ -123,12 +136,13 @@ def main(data_dir: str, img_size: int, delta_es: float) -> None:
 
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
-    args.add_argument('--batch_size', type=int, default=4096)
+    args.add_argument('--batch_size', type=int, default=128)
     args.add_argument('--epochs', type=int, default=50)
     args.add_argument('--lr', type=float, default=1e-3)
-    args.add_argument('--img_size',type=int, default=224)
-    args.add_argument('--data_dir', type=str)
+    args.add_argument('--img_size',type=int, default=512)
+    args.add_argument('--data_dir', type=str, default="./data")
     args.add_argument('--delta_es', default=1e-6, type=float)
+    args.add_argument('--local', action='store_true', default=False)
 
     args = args.parse_args()
 
@@ -141,7 +155,9 @@ if __name__ == "__main__":
     LR = args.lr
     MOMENTUM = 0.9
     WEIGHT_DECAY = 1e-4
+    cloud = True
 
+    if args.local:
+        cloud = False
 
-
-    main(args.data_dir, args.img_size, args.delta_es)
+    main(args.data_dir, args.img_size, args.delta_es, cloud)

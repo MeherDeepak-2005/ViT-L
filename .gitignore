@@ -1,5 +1,5 @@
 data
 models
-
+vit_models
 *.ipynb
 .idea

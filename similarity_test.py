@@ -10,7 +10,7 @@ from tqdm import tqdm
 DATA_DIR = "./data"
 TRAIN_DIR = f"{DATA_DIR}/train_features"
 TEST_DIR  = f"{DATA_DIR}/test_features"
-MODEL_PATH = "./models/ViT-L_epoch-9.pth"
+MODEL_PATH = "vit_models/ViT-L_epoch-9.pth"
 
 BATCH_SIZE = 32
 NUM_WORKERS = 1

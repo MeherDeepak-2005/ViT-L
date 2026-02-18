@@ -6,7 +6,7 @@ from PIL import Image
 
 model = vit_l_16()
 model.heads.head = torch.nn.Linear(1024, 8)
-weights = torch.load("./models/ViT-L_epoch-9.pth")
+weights = torch.load("vit_models/ViT-L_epoch-9.pth")
 
 # Remove '_orig_mod.' prefix from all keys
 cleaned_state_dict = {}
