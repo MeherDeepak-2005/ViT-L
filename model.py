@@ -1,88 +1,106 @@
-from torchvision.models import resnet50
-import torch as th
+import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
+from torchvision.models import resnet50, ResNet50_Weights
 from tqdm import tqdm
 
 from dataset import ImageDataset
 
-dst = ImageDataset()
-dataloader = DataLoader(dst, batch_size=1024, shuffle=True)
 
-epochs = 200
+# ── Config ────────────────────────────────────────────────────────────────────
 
-model = resnet50(weights='ResNet50_Weights.DEFAULT')
+DEVICE      = "cuda:0"
+BATCH_SIZE  = 1024
+EPOCHS      = 50
+NUM_CLASSES = 8
+LR          = 6e-2
+MOMENTUM    = 0.9
+WEIGHT_DECAY= 1e-4
 
-# freeze layers except final output
-for name, param in model.named_parameters():
-    if 'fc' not in name:
-        param.requires_grad = False
 
-# change final output to 8 labels
-model.fc = nn.Linear(in_features=2048, out_features=8)
-model = model.cuda()
+# ── Model ─────────────────────────────────────────────────────────────────────
 
-loss_fn = nn.CrossEntropyLoss(label_smoothing=0.05)
-optimizer = optim.SGD(
-    model.fc.parameters(),
-    lr=1e-2,
-    momentum=0.9,
-    weight_decay=1e-4,
-    nesterov=True
-)
-scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=1e-5)
+def build_model(num_classes: int) -> nn.Module:
+    model = resnet50(weights=ResNet50_Weights.DEFAULT)
 
-def train_one_epoch(image_model, loader, criterion, optimizer, scheduler, device):
-    image_model.train()
+    for name, param in model.named_parameters():
+        if 'layer4' not in name:
+            param.requires_grad = False
 
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    return model.to(DEVICE)
+
+
+# ── Training ──────────────────────────────────────────────────────────────────
+
+def train_one_epoch(
+    model:      nn.Module,
+    loader:     DataLoader,
+    criterion:  nn.Module,
+    optimizer:  optim.Optimizer,
+    scheduler:  optim.lr_scheduler.LRScheduler,
+    epoch:      int,
+) -> float:
+    model.train()
     running_loss = 0.0
 
-    loop = tqdm(loader, leave=True)
+    loop = tqdm(loader, desc=f"Epoch {epoch:>3}/{EPOCHS}", leave=True)
 
     for images, labels in loop:
-        images = images.to(device)
-        labels = labels.to(device)
+        images = images.to(DEVICE)
+        labels = labels.to(DEVICE)
 
-        # ---- Forward ----
-        outputs = image_model(images)
-        loss = criterion(outputs, labels)
-
-        # ---- Backward ----
         optimizer.zero_grad()
+        loss = criterion(model(images), labels)
         loss.backward()
         optimizer.step()
 
-        # ---- Scheduler (per batch for OneCycle) ----
-        scheduler.step()
-
-        # ---- Metrics ----
         running_loss += loss.item()
+        loop.set_postfix(loss=f"{loss.item():.4f}")
 
-        loop.set_postfix(
-            loss=loss.item(),
+    scheduler.step()
+
+    return running_loss / len(loader)
+
+
+def train(
+    model:      nn.Module,
+    loader:     DataLoader,
+    criterion:  nn.Module,
+    optimizer:  optim.Optimizer,
+    scheduler:  optim.lr_scheduler.LRScheduler,
+) -> None:
+    for epoch in range(1, EPOCHS + 1):
+        epoch_loss = train_one_epoch(
+            model, loader, criterion, optimizer, scheduler, epoch
         )
-
-    epoch_loss = running_loss / len(loader)
-
-    return epoch_loss
+        print(f"  └─ avg loss: {epoch_loss:.4f}\n")
 
 
+# ── Entry point ───────────────────────────────────────────────────────────────
 
-def train_model(model, train_loader, criterion,
-                optimizer, scheduler, device, epochs):
+def main() -> None:
+    dataset    = ImageDataset()
+    loader     = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-    for epoch in range(epochs):
-        train_loss = train_one_epoch(
-            model, train_loader, criterion,
-            optimizer, scheduler, device
-        )
-        print(train_loss)
+    model      = build_model(NUM_CLASSES)
+    criterion  = nn.CrossEntropyLoss(label_smoothing=0.05)
+    optimizer  = optim.SGD([
+        {"params": model.layer4.parameters(), "lr": 1e-3},
+        {"params": model.fc.parameters(), "lr": LR}
+    ],
+        lr=LR,
+        momentum=MOMENTUM,
+        weight_decay=WEIGHT_DECAY,
+        nesterov=True,
+    )
+    scheduler  = optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, T_max=EPOCHS, eta_min=1e-5
+                )
+
+    train(model, loader, criterion, optimizer, scheduler)
 
 
-
-train_model(model, dataloader ,
-            loss_fn, optimizer, scheduler,
-            'cuda:0', epochs)
-
-
+if __name__ == "__main__":
+    main()
