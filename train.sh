@@ -3,8 +3,9 @@ echo "Starting Setup"
 echo "update apt"
 apt update
 
-echo "install unzip"
+echo "install unzip and vim"
 apt install -y unzip
+apt install -y vim
 
 echo "installing pandas tqdm"
 pip install pandas tqdm

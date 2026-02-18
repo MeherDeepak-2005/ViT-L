@@ -26,7 +26,7 @@ def build_model(img_size) -> nn.Module:
             param.requires_grad = True
         if "heads in name":
             param.requires_grad = True
-    model.heads.head = nn.Linear(768, 8, bias=True)
+    model.heads.head = nn.Linear(1024, 8, bias=True)
     model = model.to(device='cuda')
     model = model.to(memory_format=torch.channels_last)
 
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     args.add_argument('--batch_size', type=int, default=4096)
     args.add_argument('--epochs', type=int, default=50)
     args.add_argument('--lr', type=float, default=1e-3)
-    args.add_argument('--img_size',type=int, default=512)
+    args.add_argument('--img_size',type=int, default=224)
     args.add_argument('--data_dir', type=str)
 
     args = args.parse_args()
