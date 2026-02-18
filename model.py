@@ -72,7 +72,7 @@ def train(
     criterion:  nn.Module,
     optimizer:  optim.Optimizer,
     scheduler:  optim.lr_scheduler.LRScheduler,
-        early_stopping_delta: float = 1e-2
+        early_stopping_delta: float = 1e-6
 ) -> None:
     best_loss = float('inf')
     prev_loss = float('inf')
