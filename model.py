@@ -93,8 +93,9 @@ def train(
             break
         prev_loss = epoch_loss
         if epoch_loss < best_loss:
-            print("Saving Model ...", epoch_loss)
             torch.save(model.state_dict(),f'./models/convnext_epoch-{epoch}.pth')
+            print("saved model", epoch_loss)
+            best_loss = epoch_loss
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
