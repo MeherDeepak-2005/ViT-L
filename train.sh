@@ -8,7 +8,7 @@ apt install -y unzip
 apt install -y vim
 
 echo "installing pandas tqdm"
-pip install pandas tqdm
+pip install pandas tqdm timm
 
 mkdir ~/coner-vision/models
 
@@ -17,7 +17,3 @@ wget -P ~/coner-vision -O ~/coner-vision/data.zip "https://drivendata-prod.s3.am
 mkdir ~/coner-vision/data
 unzip ~/coner-vision/data.zip -d ~/coner-vision/data
 rm -rf ~/coner-vision/data.zip
-
-echo "======== Executing ViT Model ==========="
-cd ~/coner-vision/
-python model.py --data_dir=./data --batch_size=128 --img_size=224
