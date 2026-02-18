@@ -72,17 +72,26 @@ def train(
     criterion:  nn.Module,
     optimizer:  optim.Optimizer,
     scheduler:  optim.lr_scheduler.LRScheduler,
+        early_stopping_delta: float = 1e-2
 ) -> None:
+    best_loss = float('inf')
+    prev_loss = float('inf')
     for epoch in range(1, EPOCHS + 1):
         epoch_loss = train_one_epoch(
             model, loader, criterion, optimizer, scheduler, epoch
         )
         print(f"  └─ avg loss: {epoch_loss:.4f}\n")
+        if abs(prev_loss - epoch_loss) < early_stopping_delta:
+            break
+        prev_loss = epoch_loss
+        if epoch_loss < best_loss:
+            print("Saving Model ...", epoch_loss)
+            model.save(f'./models/ViT-L_epoch-{epoch}.pth')
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def main(data_dir: str, img_size: int) -> None:
+def main(data_dir: str, img_size: int, delta_es: float) -> None:
     dataset    = ImageDataset(data_dir, img_size)
     loader = DataLoader(
         dataset,
@@ -93,6 +102,7 @@ def main(data_dir: str, img_size: int) -> None:
         persistent_workers=True,  # Keep workers alive between epochs
         prefetch_factor=2,  # Prefetch 4 batches per worker = 64 batches ahead
         multiprocessing_context='fork',  # Faster than spawn on Linux
+        drop_last=True,
     )
 
     model      = build_model(img_size=img_size)
@@ -108,8 +118,7 @@ def main(data_dir: str, img_size: int) -> None:
                     optimizer, T_max=EPOCHS, eta_min=1e-5
                 )
 
-    train(model, loader, criterion, optimizer, scheduler)
-    model.save("./models/ViT_Base")
+    train(model, loader, criterion, optimizer, scheduler, delta_es)
 
 
 if __name__ == "__main__":
@@ -119,6 +128,7 @@ if __name__ == "__main__":
     args.add_argument('--lr', type=float, default=1e-3)
     args.add_argument('--img_size',type=int, default=224)
     args.add_argument('--data_dir', type=str)
+    args.add_argument('--delta_es', description='Early Stopping delta', default=1e-2, type=float)
 
     args = args.parse_args()
 
@@ -134,4 +144,4 @@ if __name__ == "__main__":
 
 
 
-    main(args.data_dir, args.img_size)
+    main(args.data_dir, args.img_size, args.delta_es)
