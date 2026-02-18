@@ -10,6 +10,9 @@ import argparse
 from dataset import ImageDataset
 
 # ── Model ─────────────────────────────────────────────────────────────────────
+torch.set_float32_matmul_precision('high')
+torch.backends.cudnn.benchmark = True
+
 
 def build_model(img_size) -> nn.Module:
     model = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_V1)
@@ -17,9 +20,9 @@ def build_model(img_size) -> nn.Module:
 
     for name, param in model.named_parameters():
         param.requires_grad = False
-        if "encoder_layer_10" in name:
+        if "encoder_layer_22" in name:
             param.requires_grad = True
-        if "encoder_layer_11" in name:
+        if "encoder_layer_23" in name:
             param.requires_grad = True
         if "heads in name":
             param.requires_grad = True
@@ -95,8 +98,8 @@ def main(data_dir: str, img_size: int) -> None:
     model      = build_model(img_size=img_size)
     criterion  = nn.CrossEntropyLoss(label_smoothing=0.05)
     optimizer  = optim.AdamW([
-        {"params": model.encoder.layers.encoder_layer_10.parameters(), "lr": LR},
-        {"params": model.encoder.layers.encoder_layer_11.parameters(), "lr": LR},
+        {"params": model.encoder.layers.encoder_layer_22.parameters(), "lr": LR},
+        {"params": model.encoder.layers.encoder_layer_23.parameters(), "lr": LR},
         {"params": model.heads.parameters(), "lr": 1e-2}
     ],
         weight_decay=0.05
@@ -121,7 +124,7 @@ if __name__ == "__main__":
 
     # ── Config ────────────────────────────────────────────────────────────────────
 
-    DEVICE = "cuda:0"
+    DEVICE = "cuda"
     BATCH_SIZE = args.batch_size
     EPOCHS = args.epochs
     NUM_CLASSES = 8
