@@ -128,13 +128,13 @@ if __name__ == "__main__":
     args.add_argument('--lr', type=float, default=1e-3)
     args.add_argument('--img_size',type=int, default=224)
     args.add_argument('--data_dir', type=str)
-    args.add_argument('--delta_es', description='Early Stopping delta', default=1e-2, type=float)
+    args.add_argument('--delta_es', default=1e-2, type=float)
 
     args = args.parse_args()
 
     # ── Config ────────────────────────────────────────────────────────────────────
 
-    DEVICE = "cuda"
+    DEVICE = "cuda:0"
     BATCH_SIZE = args.batch_size
     EPOCHS = args.epochs
     NUM_CLASSES = 8
