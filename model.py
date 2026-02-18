@@ -11,8 +11,9 @@ from dataset import ImageDataset
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 
-def build_model(num_classes: int) -> nn.Module:
+def build_model(img_size) -> nn.Module:
     model = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_V1)
+    model.image_size = img_size
 
     for name, param in model.named_parameters():
         param.requires_grad = False
@@ -78,20 +79,20 @@ def train(
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def main(data_dir: str) -> None:
-    dataset    = ImageDataset(data_dir)
+def main(data_dir: str, img_size: int) -> None:
+    dataset    = ImageDataset(data_dir, img_size)
     loader = DataLoader(
         dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=16,  # Use 80% of your 20 vCPUs
+        num_workers=8,  # Use 80% of your 20 vCPUs
         pin_memory=True,  # Critical for fast CPU→GPU transfer
         persistent_workers=True,  # Keep workers alive between epochs
-        prefetch_factor=4,  # Prefetch 4 batches per worker = 64 batches ahead
+        prefetch_factor=2,  # Prefetch 4 batches per worker = 64 batches ahead
         multiprocessing_context='fork',  # Faster than spawn on Linux
     )
 
-    model      = build_model(NUM_CLASSES)
+    model      = build_model(img_size=img_size)
     criterion  = nn.CrossEntropyLoss(label_smoothing=0.05)
     optimizer  = optim.AdamW([
         {"params": model.encoder.layers.encoder_layer_10.parameters(), "lr": LR},
@@ -110,9 +111,10 @@ def main(data_dir: str) -> None:
 
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
-    args.add_argument('--batch_size', type=int, default=1024)
+    args.add_argument('--batch_size', type=int, default=4096)
     args.add_argument('--epochs', type=int, default=50)
     args.add_argument('--lr', type=float, default=1e-3)
+    args.add_argument('--img_size',type=int, default=512)
     args.add_argument('--data_dir', type=str)
 
     args = args.parse_args()
@@ -129,4 +131,4 @@ if __name__ == "__main__":
 
 
 
-    main(args.data_dir)
+    main(args.data_dir, args.img_size)

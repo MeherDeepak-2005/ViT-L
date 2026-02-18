@@ -7,13 +7,13 @@ from tqdm import tqdm
 
 
 class ImageDataset(Dataset):
-    def __init__(self, data_dir: str):
+    def __init__(self, data_dir: str, img_size: int):
         df_features = pd.read_csv(f"{data_dir}/train_features.csv").set_index('id')
         df_labels = pd.read_csv(f"{data_dir}/train_labels.csv").set_index("id")
 
         self.df = pd.concat([df_features, df_labels], axis=1)
         self.transforms = transforms.Compose([
-            transforms.Resize((512, 512)),
+            transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
