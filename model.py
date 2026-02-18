@@ -2,35 +2,33 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import vit_l_16
+from torchvision.models import ViT_L_16_Weights
 from tqdm import tqdm
+import argparse
 
 from dataset import ImageDataset
-
-
-# ── Config ────────────────────────────────────────────────────────────────────
-
-DEVICE      = "cuda:0"
-BATCH_SIZE  = 1024
-EPOCHS      = 50
-NUM_CLASSES = 8
-LR          = 6e-2
-MOMENTUM    = 0.9
-WEIGHT_DECAY= 1e-4
-
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 
 def build_model(num_classes: int) -> nn.Module:
-    model = resnet50(weights=ResNet50_Weights.DEFAULT)
+    model = vit_l_16(weights=ViT_L_16_Weights.IMAGENET1K_V1)
 
     for name, param in model.named_parameters():
-        if 'layer4' not in name:
-            param.requires_grad = False
+        param.requires_grad = False
+        if "encoder_layer_10" in name:
+            param.requires_grad = True
+        if "encoder_layer_11" in name:
+            param.requires_grad = True
+        if "heads in name":
+            param.requires_grad = True
+    model.heads.head = nn.Linear(768, 8, bias=True)
+    model = model.to(device='cuda')
+    model = model.to(memory_format=torch.channels_last)
 
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
-    return model.to(DEVICE)
+    model = torch.compile(model, mode='max-autotune')
 
+    return model
 
 # ── Training ──────────────────────────────────────────────────────────────────
 
@@ -80,27 +78,55 @@ def train(
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def main() -> None:
-    dataset    = ImageDataset()
-    loader     = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+def main(data_dir: str) -> None:
+    dataset    = ImageDataset(data_dir)
+    loader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=16,  # Use 80% of your 20 vCPUs
+        pin_memory=True,  # Critical for fast CPU→GPU transfer
+        persistent_workers=True,  # Keep workers alive between epochs
+        prefetch_factor=4,  # Prefetch 4 batches per worker = 64 batches ahead
+        multiprocessing_context='fork',  # Faster than spawn on Linux
+    )
 
     model      = build_model(NUM_CLASSES)
     criterion  = nn.CrossEntropyLoss(label_smoothing=0.05)
-    optimizer  = optim.SGD([
-        {"params": model.layer4.parameters(), "lr": 1e-3},
-        {"params": model.fc.parameters(), "lr": LR}
+    optimizer  = optim.AdamW([
+        {"params": model.encoder.layers.encoder_layer_10.parameters(), "lr": LR},
+        {"params": model.encoder.layers.encoder_layer_11.parameters(), "lr": LR},
+        {"params": model.heads.parameters(), "lr": 1e-2}
     ],
-        lr=LR,
-        momentum=MOMENTUM,
-        weight_decay=WEIGHT_DECAY,
-        nesterov=True,
+        weight_decay=0.05
     )
     scheduler  = optim.lr_scheduler.CosineAnnealingLR(
                     optimizer, T_max=EPOCHS, eta_min=1e-5
                 )
 
     train(model, loader, criterion, optimizer, scheduler)
+    model.save("./models/ViT_Base")
 
 
 if __name__ == "__main__":
-    main()
+    args = argparse.ArgumentParser()
+    args.add_argument('--batch_size', type=int, default=1024)
+    args.add_argument('--epochs', type=int, default=50)
+    args.add_argument('--lr', type=float, default=1e-3)
+    args.add_argument('--data_dir', type=str)
+
+    args = args.parse_args()
+
+    # ── Config ────────────────────────────────────────────────────────────────────
+
+    DEVICE = "cuda:0"
+    BATCH_SIZE = args.batch_size
+    EPOCHS = args.epochs
+    NUM_CLASSES = 8
+    LR = args.lr
+    MOMENTUM = 0.9
+    WEIGHT_DECAY = 1e-4
+
+
+
+    main(args.data_dir)
