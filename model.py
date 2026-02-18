@@ -86,7 +86,7 @@ def train(
         prev_loss = epoch_loss
         if epoch_loss < best_loss:
             print("Saving Model ...", epoch_loss)
-            model.save(f'./models/ViT-L_epoch-{epoch}.pth')
+            torch.save(model.state_dict(),f'./models/ViT-L_epoch-{epoch}.pth')
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
