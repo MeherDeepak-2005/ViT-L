@@ -14,7 +14,7 @@ from torch.distributions import Beta
 def get_train_transforms(image_size=512):
     return A.Compose([
         # Geometry
-        A.RandomResizedCrop(size=(image_size, image_size), scale=(0.5, 1.0), p=1.0),
+        A.RandomResizedCrop(size=(512, 512), scale=(0.65, 1.0)),
         A.HorizontalFlip(p=0.5),
         A.Affine(translate_percent=0.05, scale=(0.9, 1.1), rotate=(-15, 15), p=0.5),
 
@@ -34,11 +34,11 @@ def get_train_transforms(image_size=512):
 
         # Occlusion — small patches, conservative for small subjects
         A.CoarseDropout(
-            num_holes_range=(1, 4),
-            hole_height_range=(18, 48),
-            hole_width_range=(18, 48),
+            num_holes_range=(1, 6),  # was (1, 4)
+            hole_height_range=(16, 48),  # was (8, 20) — scale with animal size
+            hole_width_range=(16, 48),
             fill=128,
-            p=0.3
+            p=0.4  # was 0.3
         ),
 
         # Normalize + convert to tensor
