@@ -1,73 +1,66 @@
+import numpy as np
 import timm
-import torch.nn as nn
 import torch
-from torchvision import transforms
+import torch.nn as nn
 import pandas as pd
 from PIL import Image
+from pathlib import Path
+from tqdm import tqdm
 from aug_utils import predict_with_tta
 
-model = timm.create_model("convnext_large_in22k", pretrained=True)
-model.head.fc = nn.Linear(in_features=model.head.fc.in_features, out_features=8)
+# ── Config ────────────────────────────────────────────────────────────────────
+IMG_SIZE = 512  # must match training resolution
+BATCH_SIZE = 32
+MODEL_PATH = "./models/convnext_large.pth"
+DATA_DIR = Path("./data")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# noinspection PyArgumentList
-model = model.to(device='cuda', memory_format=torch.channels_last)
+LABEL_COLS = [
+    "antelope_duiker", "bird", "blank",
+    "civet_genet", "hog", "leopard",
+    "monkey_prosimian", "rodent"
+]
 
-weights = torch.load("./models/convnext_large.pth")
+# ── Build & load model ────────────────────────────────────────────────────────
+model = timm.create_model("convnext_large_in22k", pretrained=False)
+model.head.fc = nn.Linear(model.head.fc.in_features, out_features=8)
 
-# Remove '_orig_mod.' prefix from all keys
-cleaned_state_dict = {}
-for key, value in weights.items():
-    if key.startswith('_orig_mod.'):
-        cleaned_key = key.replace('_orig_mod.', '')
-        cleaned_state_dict[cleaned_key] = value
-    else:
-        cleaned_state_dict[key] = value
+# Strip torch.compile prefix if model was compiled during training
+weights = torch.load(MODEL_PATH, map_location=DEVICE)
+cleaned = {
+    k.replace('_orig_mod.', ''): v
+    for k, v in weights.items()
+}
+model.load_state_dict(cleaned)
+model = model.to(DEVICE, memory_format=torch.channels_last)
+model.eval()
 
-# Load into model
-model.load_state_dict(cleaned_state_dict)
+# ── Load test file paths from CSV (consistent ordering, no stray files) ───────
+df_test = pd.read_csv(DATA_DIR / "test_features.csv").set_index("id")
+img_ids = df_test.index.tolist()
+img_paths = [DATA_DIR / fp for fp in df_test["filepath"].tolist()]
 
-transform = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
-])
-
-from pathlib import Path
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.eval().to(device)
-
-batch_size = 32
+# ── Inference with TTA ────────────────────────────────────────────────────────
 rows = []
 
-test_dir = Path("./data/test_features")
+for img_id, img_path in tqdm(zip(img_ids, img_paths), total=len(img_ids), desc="Predicting"):
+    # Load as raw numpy HWC uint8 — predict_with_tta handles all transforms internally
+    img_np = np.array(Image.open(img_path).convert("RGB"))
 
-imgs = list(test_dir.iterdir())
+    # Returns (8,) tensor of probabilities summing to 1
+    probs = predict_with_tta(model, img_np, DEVICE, image_size=IMG_SIZE)
 
-with torch.no_grad():
-    for i in range(0, len(imgs), batch_size):
-        batch_files = imgs[i:i + batch_size]
+    rows.append([img_id, *probs.cpu().numpy()])
 
-        img_ids = []
-        tensors = []
+# ── Build submission DataFrame ────────────────────────────────────────────────
+df_submission = pd.DataFrame(rows, columns=["id"] + LABEL_COLS)
+df_submission = df_submission.set_index("id")
 
-        for img_path in batch_files:
-            img_ids.append(img_path.stem)
+# Sanity check — all rows should sum to ~1.0
+row_sums = df_submission.sum(axis=1)
+assert (row_sums - 1.0).abs().max() < 1e-4, "Probabilities don't sum to 1!"
 
-            img = Image.open(img_path).convert("RGB")
-            tensors.append(transform(img))
-
-        batch_tensor = torch.stack(tensors).to(device)
-
-        probs = predict_with_tta(model, batch_tensor, device)
-
-        for img_id, prob_label in zip(img_ids, probs):
-            rows.append([img_id, *prob_label])
-
-df = pd.DataFrame(rows)
-columns = "id", "antelope_duiker", "bird", "blank", "civet_genet", "hog", "leopard", "monkey_prosimian", "rodent"
-df.columns = columns
-df.to_csv("./submissions.csv", index=True)
-print(df.head())
+df_submission.to_csv("./submission.csv", index=True)
+print(df_submission.head())
+print(f"\nSubmission shape : {df_submission.shape}")
+print(f"Probability sums : min={row_sums.min():.6f}  max={row_sums.max():.6f}")
