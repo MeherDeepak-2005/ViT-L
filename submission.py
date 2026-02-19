@@ -1,12 +1,18 @@
-from torchvision.models import vit_l_16, ViT_L_16_Weights
+import timm
+import torch.nn as nn
 import torch
 from torchvision import transforms
 import pandas as pd
 from PIL import Image
 
-model = vit_l_16()
-model.heads.head = torch.nn.Linear(1024, 8)
-weights = torch.load("vit_models/ViT-L_epoch-9.pth")
+
+model = timm.create_model("convnext_large_in22k", pretrained=True)
+model.head.fc = nn.Linear(in_features=model.head.fc.in_features, out_features=8)
+
+# noinspection PyArgumentList
+model = model.to(device='cuda', memory_format=torch.channels_last)
+
+weights = torch.load("./models/convnext_epoch-9.pth")
 
 # Remove '_orig_mod.' prefix from all keys
 cleaned_state_dict = {}

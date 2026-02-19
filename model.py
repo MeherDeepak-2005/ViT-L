@@ -20,14 +20,15 @@ def build_model(cloud) -> nn.Module:
     model = timm.create_model("convnext_large_in22k", pretrained=True)
     model.head.fc = nn.Linear(in_features=model.head.fc.in_features, out_features=8)
 
-    for param in model.parameters():
-        param.requires_grad = False
-
-    for param in model.stages[-1].parameters():
-        param.requires_grad = True
-
-    for param in model.head.parameters():
-        param.requires_grad = True
+    #train all layers
+    # for param in model.parameters():
+    #     param.requires_grad = False
+    #
+    # for param in model.stages[-1].parameters():
+    #     param.requires_grad = True
+    #
+    # for param in model.head.parameters():
+    #     param.requires_grad = True
 
     # noinspection PyArgumentList
     model = model.to(device='cuda', memory_format=torch.channels_last)
@@ -93,7 +94,7 @@ def train(
             break
         prev_loss = epoch_loss
         if epoch_loss < best_loss:
-            torch.save(model.state_dict(),f'./models/convnext_epoch-{epoch}.pth')
+            torch.save(model.state_dict(),f'./models/convnext_large.pth')
             print("saved model", epoch_loss)
             best_loss = epoch_loss
 
@@ -123,11 +124,19 @@ def main(data_dir: str, img_size: int, delta_es: float, cloud) -> None:
 
     model      = build_model(cloud)
     criterion  = nn.CrossEntropyLoss(label_smoothing=0.05)
-    optimizer  = optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()),
-        lr=1e-4,
-        weight_decay=1e-4
-    )
+
+    # optimizer params
+    # different lr for head because newly initialised
+    backbone_params = [p for n, p in model.named_parameters()
+                       if not n.startswith("head.")]
+    head_params = model.head.parameters()
+
+    optimizer = torch.optim.AdamW([
+        {"params": backbone_params, "lr": LR},
+        {"params": head_params, "lr": 1e-3},
+    ], weight_decay=1e-4)
+
+
     scheduler  = optim.lr_scheduler.CosineAnnealingLR(
                     optimizer, T_max=EPOCHS, eta_min=1e-5
                 )
@@ -142,7 +151,7 @@ if __name__ == "__main__":
     args.add_argument('--lr', type=float, default=1e-3)
     args.add_argument('--img_size',type=int, default=512)
     args.add_argument('--data_dir', type=str, default="./data")
-    args.add_argument('--delta_es', default=1e-6, type=float)
+    args.add_argument('--delta_es', default=1e-4, type=float)
     args.add_argument('--local', action='store_true', default=False)
 
     args = args.parse_args()
