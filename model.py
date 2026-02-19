@@ -128,8 +128,9 @@ def main(data_dir: str, img_size: int, delta_es: float, cloud) -> None:
     # optimizer params
     # different lr for head because newly initialised
     backbone_params = [p for n, p in model.named_parameters()
-                       if not n.startswith("head.")]
-    head_params = model.head.parameters()
+                       if not n.startswith("head")]
+    head_params = [p for n, p in model.named_parameters()
+                       if n.startswith("head")]
 
     optimizer = torch.optim.AdamW([
         {"params": backbone_params, "lr": LR},
