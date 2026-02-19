@@ -5,14 +5,13 @@ from torchvision import transforms
 import pandas as pd
 from PIL import Image
 
-
 model = timm.create_model("convnext_large_in22k", pretrained=True)
 model.head.fc = nn.Linear(in_features=model.head.fc.in_features, out_features=8)
 
 # noinspection PyArgumentList
 model = model.to(device='cuda', memory_format=torch.channels_last)
 
-weights = torch.load("./models/convnext_epoch-9.pth")
+weights = torch.load("./models/convnext_large.pth")
 
 # Remove '_orig_mod.' prefix from all keys
 cleaned_state_dict = {}
@@ -26,16 +25,13 @@ for key, value in weights.items():
 # Load into model
 model.load_state_dict(cleaned_state_dict)
 
-
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
     transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
-    )
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
 ])
-
 
 from pathlib import Path
 
@@ -71,8 +67,7 @@ with torch.no_grad():
             rows.append([img_id, *prob_label])
 
 df = pd.DataFrame(rows)
-columns = "id","antelope_duiker","bird","blank","civet_genet","hog","leopard","monkey_prosimian","rodent"
+columns = "id", "antelope_duiker", "bird", "blank", "civet_genet", "hog", "leopard", "monkey_prosimian", "rodent"
 df.columns = columns
-df.to_csv("./submissions.csv")
+df.to_csv("./submissions.csv", index=True)
 print(df.head())
-

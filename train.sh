@@ -8,7 +8,7 @@ apt install -y unzip
 apt install -y vim
 
 echo "installing pandas tqdm"
-pip install pandas tqdm timm
+pip install pandas tqdm timm albumentations
 
 mkdir ~/coner-vision/models
 
@@ -17,3 +17,10 @@ wget -P ~/coner-vision -O ~/coner-vision/data.zip "https://drivendata-prod.s3.am
 mkdir ~/coner-vision/data
 unzip ~/coner-vision/data.zip -d ~/coner-vision/data
 rm -rf ~/coner-vision/data.zip
+
+
+echo "Training the model"
+cd coner-vision
+python model.py --data_dir=./data --lr=1e-5 --delta_es=1e-4
+
+python submissions.py --model_path=./models/convnext_large.pth

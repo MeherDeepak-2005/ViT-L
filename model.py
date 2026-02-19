@@ -5,8 +5,9 @@ from torch.utils.data import DataLoader
 import timm
 from tqdm import tqdm
 import argparse
+from aug_utils import transforms
 from torch.amp import autocast, GradScaler
-
+import pandas as pd
 from dataset import ImageDataset
 
 # ── Model ─────────────────────────────────────────────────────────────────────
@@ -20,16 +21,6 @@ def build_model(cloud) -> nn.Module:
     model = timm.create_model("convnext_large_in22k", pretrained=True)
     model.head.fc = nn.Linear(in_features=model.head.fc.in_features, out_features=8)
 
-    #train all layers
-    # for param in model.parameters():
-    #     param.requires_grad = False
-    #
-    # for param in model.stages[-1].parameters():
-    #     param.requires_grad = True
-    #
-    # for param in model.head.parameters():
-    #     param.requires_grad = True
-
     # noinspection PyArgumentList
     model = model.to(device='cuda', memory_format=torch.channels_last)
 
@@ -38,15 +29,16 @@ def build_model(cloud) -> nn.Module:
 
     return model
 
+
 # ── Training ──────────────────────────────────────────────────────────────────
 
 def train_one_epoch(
-    model:      nn.Module,
-    loader:     DataLoader,
-    criterion:  nn.Module,
-    optimizer:  optim.Optimizer,
-    scheduler:  optim.lr_scheduler.LRScheduler,
-    epoch:      int,
+        model: nn.Module,
+        loader: DataLoader,
+        criterion: nn.Module,
+        optimizer: optim.Optimizer,
+        scheduler: optim.lr_scheduler.LRScheduler,
+        epoch: int,
 ) -> float:
     model.train()
     running_loss = 0.0
@@ -76,11 +68,11 @@ def train_one_epoch(
 
 
 def train(
-    model:      nn.Module,
-    loader:     DataLoader,
-    criterion:  nn.Module,
-    optimizer:  optim.Optimizer,
-    scheduler:  optim.lr_scheduler.LRScheduler,
+        model: nn.Module,
+        loader: DataLoader,
+        criterion: nn.Module,
+        optimizer: optim.Optimizer,
+        scheduler: optim.lr_scheduler.LRScheduler,
         early_stopping_delta: float = 1e-6
 ) -> None:
     best_loss = float('inf')
@@ -94,7 +86,7 @@ def train(
             break
         prev_loss = epoch_loss
         if epoch_loss < best_loss:
-            torch.save(model.state_dict(),f'./models/convnext_large.pth')
+            torch.save(model.state_dict(), f'./models/convnext_large.pth')
             print("saved model", epoch_loss)
             best_loss = epoch_loss
 
@@ -102,7 +94,7 @@ def train(
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main(data_dir: str, img_size: int, delta_es: float, cloud) -> None:
-    dataset    = ImageDataset(data_dir, img_size)
+    dataset = ImageDataset(data_dir, img_size)
     if cloud is True:
         loader = DataLoader(
             dataset,
@@ -122,25 +114,24 @@ def main(data_dir: str, img_size: int, delta_es: float, cloud) -> None:
             batch_size=BATCH_SIZE
         )
 
-    model      = build_model(cloud)
-    criterion  = nn.CrossEntropyLoss(label_smoothing=0.05)
+    model = build_model(cloud)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     # optimizer params
     # different lr for head because newly initialised
     backbone_params = [p for n, p in model.named_parameters()
                        if not n.startswith("head")]
     head_params = [p for n, p in model.named_parameters()
-                       if n.startswith("head")]
+                   if n.startswith("head")]
 
     optimizer = torch.optim.AdamW([
         {"params": backbone_params, "lr": LR},
         {"params": head_params, "lr": 1e-3},
     ], weight_decay=1e-4)
 
-
-    scheduler  = optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer, T_max=EPOCHS, eta_min=1e-5
-                )
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=EPOCHS, eta_min=1e-5
+    )
 
     train(model, loader, criterion, optimizer, scheduler, delta_es)
 
@@ -150,7 +141,7 @@ if __name__ == "__main__":
     args.add_argument('--batch_size', type=int, default=128)
     args.add_argument('--epochs', type=int, default=50)
     args.add_argument('--lr', type=float, default=1e-3)
-    args.add_argument('--img_size',type=int, default=512)
+    args.add_argument('--img_size', type=int, default=512)
     args.add_argument('--data_dir', type=str, default="./data")
     args.add_argument('--delta_es', default=1e-4, type=float)
     args.add_argument('--local', action='store_true', default=False)
@@ -167,8 +158,14 @@ if __name__ == "__main__":
     MOMENTUM = 0.9
     WEIGHT_DECAY = 1e-4
     cloud = True
+    data_dir = args.data_dir
 
     if args.local:
         cloud = False
+
+    df_features = pd.read_csv(f"{data_dir}/train_features.csv").set_index('id')
+    df_labels = pd.read_csv(f"{data_dir}/train_labels.csv").set_index("id")
+
+    df = pd.concat([df_features, df_labels], axis=1)
 
     main(args.data_dir, args.img_size, args.delta_es, cloud)
