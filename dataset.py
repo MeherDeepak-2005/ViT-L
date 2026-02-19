@@ -28,6 +28,9 @@ class ImageDataset(Dataset):
 
             self.imgs.append(img_np)
 
+    def __len__(self):
+        return len(self.imgs)
+
     def __getitem__(self, idx):
         tensor = self.transforms(image=self.imgs[idx])['image']
         return tensor, self.labels[idx]
