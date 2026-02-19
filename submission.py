@@ -4,6 +4,7 @@ import torch
 from torchvision import transforms
 import pandas as pd
 from PIL import Image
+from aug_utils import predict_with_tta
 
 model = timm.create_model("convnext_large_in22k", pretrained=True)
 model.head.fc = nn.Linear(in_features=model.head.fc.in_features, out_features=8)
@@ -60,8 +61,7 @@ with torch.no_grad():
 
         batch_tensor = torch.stack(tensors).to(device)
 
-        logits = model(batch_tensor)
-        probs = torch.softmax(logits, dim=1).cpu().tolist()
+        probs = predict_with_tta(model, batch_tensor, device)
 
         for img_id, prob_label in zip(img_ids, probs):
             rows.append([img_id, *prob_label])
