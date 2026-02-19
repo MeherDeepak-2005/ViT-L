@@ -92,8 +92,6 @@ def build_model(cloud: bool) -> nn.Module:
                               mlp_hidden=512, dropout=0.4)
 
     model = model.to('cuda', memory_format=torch.channels_last)
-    if cloud:
-        model = torch.compile(model, mode='max-autotune')
     return model
 
 

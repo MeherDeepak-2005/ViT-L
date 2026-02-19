@@ -121,10 +121,6 @@ def run_phase1(model, train_loader, val_loader, fold, patience) -> str:
     save_path = f"./checkpoints/fold{fold}_phase1.pth"
     print(f"\n  [Fold {fold}] Phase 1 — head only (backbone frozen)")
 
-    # Freeze backbone, keep head trainable
-    for name, param in model.named_parameters():
-        param.requires_grad = name.startswith('head')
-
     # get_trainable_params returns only requires_grad=True params — your model_utils fn
     optimizer = optim.AdamW(
         get_trainable_params(model),
