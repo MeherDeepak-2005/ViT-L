@@ -5,11 +5,12 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from aug_utils import get_train_transforms, get_val_transforms
 from bbox_utils import load_megadetector_results, crop_to_bbox
+from pathlib import Path
 
 
 class ImageDataset(Dataset):
     def __init__(self, img_paths, labels, train=True, img_size=512,
-                 bbox_json=None):  # ← new
+                 bbox_json="./data/megadetector_train.json"):  # ← new
         self.transforms = get_train_transforms(img_size) if train else get_val_transforms(img_size)
         self.bbox_map = load_megadetector_results(bbox_json, base_dir="./data/train_features") if bbox_json else {}
 
@@ -23,7 +24,7 @@ class ImageDataset(Dataset):
             img_np = np.array(Image.open(image_path).convert('RGB'))
 
             # crop to animal if bbox available
-            bbox = self.bbox_map.get(str(image_path))
+            bbox = self.bbox_map.get(Path(image_path).name)
             img_np = crop_to_bbox(img_np, bbox, margin=0.15)
 
             self.imgs.append(img_np)

@@ -4,7 +4,7 @@ import pandas as pd
 from PIL import Image
 from pathlib import Path
 from tqdm import tqdm
-
+from pathlib import Path
 from model_utils import load_model
 from aug_utils import predict_with_tta
 from bbox_utils import load_megadetector_results, crop_to_bbox
@@ -47,7 +47,7 @@ for img_id, img_path in tqdm(zip(img_ids, img_paths), total=len(img_ids), desc="
     img_np = np.array(Image.open(img_path).convert("RGB"))  # HWC uint8
 
     # Crop to animal bbox — same preprocessing as training dataset
-    bbox = bbox_map.get(str(img_path))
+    bbox = bbox_map.get(Path(img_path).name)
     img_np = crop_to_bbox(img_np, bbox, margin=0.15)
 
     # TTA over each fold model, then average

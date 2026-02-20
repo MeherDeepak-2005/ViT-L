@@ -31,6 +31,7 @@ def train_one_epoch(
         scaler: GradScaler,
         epoch: int,
         epochs: int,
+        scheduler=None
 ) -> float:
     model.train()
     running_loss = 0.0
@@ -51,6 +52,9 @@ def train_one_epoch(
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
+
+        if scheduler is not None:
+            scheduler.step()
 
         running_loss += loss.item()
         loop.set_postfix(loss=f"{loss.item():.4f}")
@@ -88,12 +92,10 @@ def train(
     patience_counter = 0
 
     for epoch in range(1, EPOCHS + 1):
-        train_loss = train_one_epoch(model, train_loader, optimizer, scaler, epoch, EPOCHS)
+        train_loss = train_one_epoch(model, train_loader, optimizer, scaler, epoch, EPOCHS, scheduler)
         val_loss = validate(model, val_loader)
 
         print(f"  └─ train loss: {train_loss:.4f}  |  val loss: {val_loss:.4f}")
-
-        scheduler.step()
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -166,8 +168,15 @@ def run_phase2(model, train_loader, val_loader, fold, patience) -> float:
         {'params': list(model.head.parameters()), 'lr': 1e-4},  # head — already warmed up
     ], weight_decay=1e-4)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=EPOCHS, eta_min=1e-6
+    scheduler = optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=[5e-5, 2e-4, 1e-3],  # one per param group, 10x the base lr each
+        steps_per_epoch=len(train_loader),
+        epochs=EPOCHS,
+        pct_start=0.3,  # 30% of training is warmup
+        div_factor=25,  # start lr = max_lr / 25
+        final_div_factor=1e4,  # end lr = max_lr / 10000
+        anneal_strategy='cos'
     )
 
     best_val = train(

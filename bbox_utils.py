@@ -1,5 +1,6 @@
 import json
 import numpy as np
+from pathlib import Path
 
 
 def load_megadetector_results(json_path: str, base_dir: str = '') -> dict:
@@ -35,9 +36,9 @@ def load_megadetector_results(json_path: str, base_dir: str = '') -> dict:
         if animal_dets:
             # Take the highest-confidence animal detection
             best = max(animal_dets, key=lambda d: d['conf'])
-            bbox_map[filepath] = best['bbox']  # [xmin, ymin, w, h] normalised
+            bbox_map[Path(filepath).name] = best['bbox']  # [xmin, ymin, w, h] normalised
         else:
-            bbox_map[filepath] = None  # blank or vehicle/human only
+            bbox_map[Path(filepath).name] = None  # blank or vehicle/human only
 
     n_with_bbox = sum(1 for v in bbox_map.values() if v is not None)
     n_without_bbox = len(bbox_map) - n_with_bbox
